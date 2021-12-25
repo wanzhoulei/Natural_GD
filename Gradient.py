@@ -62,9 +62,10 @@ def loss(X, k, mu, w, ytruth):
 	error = 0.5*(ytruth-ymodel)**2;
 	return np.sum(error);
 
-##Q is the precision matrix
-def expinner(x, mu, Q):
-	inner = -0.5*np.einsum("ij, ij->i", (x-mu)@Q, x-mu);
+##pre is the precision matrix
+def expinner(x, mu):
+	global pre;
+	inner = -0.5*np.einsum("ij, ij->i", (x-mu)@pre, x-mu);
 	return np.exp(inner);  
 
 ##it returns the gradient of p w.r.t all the w_i
@@ -81,7 +82,7 @@ def dpdw(x, mu, w, k):
 ##for two mixtures of gaussian
 ##argument w scalar, mu is mu1
 def dpdmu11(x, mu, w):
-	expt = expinner(x,  mu, pre);
+	expt = expinner(x,  mu);
 	ret = (w/(2*np.pi*var**2))*(x[:, 0] - mu[0]);
 	ret = ret * expt;
 	return ret;
@@ -423,12 +424,12 @@ def l2_Natural_GD_test(lr, initial, iteration, k, N, A, ytruth, savepath):
 #the derivative dp/dmu1:
 def dpdmu1(w, x, mu1):
 	t1 = expinner(x, mu1); t2 = (mu1-x);
-	return -w*(1/(2*np.pi))*np.multiply(t2, t1[:, np.newaxis]);
+	return -w*(1/(2*np.pi*var**2))*np.multiply(t2, t1[:, np.newaxis]);
 	
 #the derivative dp/dmu2:
 def dpdmu2(w, x, mu2):
 	t1 = expinner(x, mu2); t2 = (mu2-x);
-	return (w-1)*(1/(2*np.pi))*np.multiply(t2, t1[:, np.newaxis]);
+	return (w-1)*(1/(2*np.pi*var**2))*np.multiply(t2, t1[:, np.newaxis]);
 
 ##this function returns the gradient of p and U w.r.t mu1 only
 def gradient_mu1_all(X, w, mu1, mu2, ytruth):
@@ -639,7 +640,7 @@ def Natural_GD_mu2(X, N, A, w, mu1, lr, initial, iteration, plotrange, ytruth, s
 	return [trace, tracevalue];
 	
 ##std gradient descent on mu1 only with fixed w and mu2
-def std_GD_mu1(X, w, mu2, lr, initial, iteration, plotrange, ytruth, savepath1, savepath2):
+def std_GD_mu1(X, w, mu2, lr, initial, iteration, plotrange, ytruth, savepath1='', savepath2=''):
 	para = initial; trace = [para]; tracevalue = [loss(X, 2, np.array([para, mu2]), np.array([w]), ytruth)];
 	start = time.time();
 	for i in range(iteration):
@@ -659,7 +660,7 @@ def std_GD_mu1(X, w, mu2, lr, initial, iteration, plotrange, ytruth, savepath1, 
 	return [trace, tracevalue];
 	
 ##std gradient descent on mu1 only with fixed w and mu2
-def std_GD_mu2(X, w, mu1, lr, initial, iteration, plotrange, ytruth, savepath1, savepath2):
+def std_GD_mu2(X, w, mu1, lr, initial, iteration, plotrange, ytruth, savepath1='', savepath2=''):
 	para = initial; trace = [para]; tracevalue = [loss(X, 2, np.array([mu1, para]), np.array([w]), ytruth)];
 	start = time.time();
 	for i in range(iteration):
@@ -679,7 +680,7 @@ def std_GD_mu2(X, w, mu1, lr, initial, iteration, plotrange, ytruth, savepath1, 
 	return [trace, tracevalue];
 	
 ##l2 natural gradient descent on mu1 only with fixed w and mu2
-def l2_Natural_GD_mu1(X, N, w, mu2, lr, initial, iteration, plotrange, ytruth, savepath1, savepath2):
+def l2_Natural_GD_mu1(X, N, w, mu2, lr, initial, iteration, plotrange, ytruth, savepath1='', savepath2=''):
 	para = initial; trace = [para]; tracevalue = [loss(X, 2, np.array([para, mu2]), np.array([w]), ytruth)];
 	start = time.time();
 	for i in range(iteration):
@@ -699,7 +700,7 @@ def l2_Natural_GD_mu1(X, N, w, mu2, lr, initial, iteration, plotrange, ytruth, s
 	return [trace, tracevalue];
 
 ##l2 natural gradient descent on mu1 only with fixed w and mu1
-def l2_Natural_GD_mu2(X, N, w, mu1, lr, initial, iteration, plotrange, ytruth, savepath1, savepath2):
+def l2_Natural_GD_mu2(X, N, w, mu1, lr, initial, iteration, plotrange, ytruth, savepath1='', savepath2=''):
 	para = initial; trace = [para]; tracevalue = [loss(X, 2, np.array([mu1, para]), np.array([w]), ytruth)];
 	start = time.time();
 	for i in range(iteration):
@@ -1186,7 +1187,7 @@ def plot_VF_mu1(X, mu2_fix, w, ytruth, m=0, n=0, vfpath='', tracepath='', xrange
 	##plot the convergence trace
 	if tracepath != '':
 		##read the trace file
-		trace = np.genfromtxt(tracepath);
+		trace = np.genfromtxt(tracepath, delimiter=',');
 		plt.plot(trace[:, 0], trace[:, 1], '.-', c='r', label = r'$W_2$ Natural GD trace', zorder = 5);
 		plt.scatter(trace[0][0], trace[0][1], s=150, c='g', marker=(5, 1), zorder = 10, label = 'initial point')
 		plt.text(trace[0][0]+.2, trace[0][1]+0.2, '({}, {})'.format(trace[0][0], trace[0][1]));
@@ -1353,6 +1354,51 @@ def Vector_field_l2mu2(X, mu1_fix, w, ytruth, N, trace='', savpath='',
 				 '({}, {})'.format(trace[0][0], trace[0][1]));
 	plt.xlabel(r"$\mu_2$: $x$ direction");
 	plt.ylabel(r"$\mu_2$: $y$ direction");
+	plt.legend();
+	if (savpath != ''):
+		plt.savefig(savpath, dpi = 300);
+
+##this is a Fisher-Rao GD vector field function w.r.t mu1
+##it takes a function handle as GD direction function
+def VF_FRmu1(X, mu2_fix, w, ytruth, N, func, trace='', savpath='', 
+						xrange = [-3.5, 8.5], yrange = [-3.5, 8.5]):
+	matlib.rcParams['text.usetex'] = True;
+	plt.rcParams.update({'font.size': 20})
+	x = np.arange(xrange[0],xrange[1],grid);
+	y = np.arange(yrange[0],yrange[1],grid);
+	P,Q = np.meshgrid(x,y)
+	Z = np.zeros((x.size, y.size));
+	for i in range(x.size):
+			for j in range(y.size):
+				Z[i, j] = loss(X, 2, np.array([np.array([grid*i+xrange[0], grid*j+yrange[0]]), mu2_fix]), 
+							  np.array([w]), ytruth);
+	fig, ax = plt.subplots(figsize=(10, 10));
+	level = np.arange(Z.min(), Z.max(), (Z.max()-Z.min())/40);
+	CS = ax.contour(Q,P,Z,levels = level, zorder=0);
+	ax.clabel(CS, inline=True, fontsize=10);
+	for i in np.arange(xrange[0], xrange[1], 0.5):
+		for j in np.arange(yrange[0], yrange[1], 0.5):
+			mu1 = np.array([i, j]);
+			direct = func(X, 2, np.array([mu1, mu2_fix]), np.array([w]), N, ytruth);
+			length = np.linalg.norm(direct);
+			if (length<0.00000000001):
+				plt.scatter(i, j, c = 'blue', label = 'global minimum', zorder = 20, s=100);
+				continue;
+			direct = direct/length;
+			plt.arrow(i, j, direct[0]/3, direct[1]/3, 
+					width=0.01, fc='blue', ec='blue', 
+					  head_length = 0.1, head_width = 0.05);
+	if (trace != ''):
+		plt.plot(trace[:, 0], trace[:, 1], 
+				 '.-', c='r', label = r'Fisher-Rao Natural GD trace', zorder = 5);
+		plt.scatter(trace[0][0], 
+				trace[0][1], s=150, c='g', marker=(5, 1), 
+					zorder = 10, label = 'initial point')
+		plt.text(trace[0][0]-1.3, 
+				 trace[0][1]+0.2, 
+				 '({}, {})'.format(trace[0][0], trace[0][1]));
+	plt.xlabel(r"$\mu_1$: $x$ direction");
+	plt.ylabel(r"$\mu_1$: $y$ direction");
 	plt.legend();
 	if (savpath != ''):
 		plt.savefig(savpath, dpi = 300);
